@@ -1,11 +1,10 @@
 ﻿@page "/task-register"
-@rendermode InteractiveServe
-@using Microsoft.AspNetCore.Components.Forms
+@rendermode InteractiveServer
 @using BlazorKanban.Models
+@using Microsoft.AspNetCore.Components.Forms
 @using Microsoft.AspNetCore.Components.Web
 @inject HttpClient Http
 @inject NavigationManager Navigation
-// ...
 
 <PageTitle>Cadastrar Task</PageTitle>
 
@@ -144,18 +143,18 @@
                 <div class="mb-3">
                     <label for="status">Status</label>
                     <InputSelect id="status"
-                    class="select-like"
-                    @bind-Value="newTask.KanbanListId"
-                    @onchange="LogStatusChange"
-                    For="@(() => newTask.KanbanListId)">
-                        <option value="0">Selecione uma Opção...</option>
+                        class="select-like"
+                        TValue="int"
+                        @bind-Value="newTask.KanbanListId"
+                        @onchange="LogStatusChange"
+                        For="@(() => newTask.KanbanListId)">
                         <option value="1">Iniciada</option>
                         <option value="2">Em Andamento</option>
                         <option value="3">Concluída</option>
                     </InputSelect>
-                    @*<ValidationMessage For="@(() => newTask.KanbanListId)">
+                    <ValidationMessage For="@(() => newTask.KanbanListId)">
                         <div class="validation">@context</div>
-                    </ValidationMessage>*@
+                    </ValidationMessage>
                     
                 </div>
             </div>
@@ -181,14 +180,15 @@
 </div>
 
 @code {
-    private List<KanbanList>? columns; // (opcional) caso vá popular o select pela API
-    public TaskItem newTask { get; set; } = new ();
-    //{
-    //     Title = string.Empty,
-       //     Description = string.Empty,
-       //     CreatedAt = DateTime.Now // considere usar no servidor / ou DateTime.UtcNow
+    private List<KanbanList>? columns; 
+    public TaskItem newTask { get; set; } = new ()
+    {
+           Title = string.Empty,
+           Description = string.Empty,
+           CreatedAt = DateTime.Now,
+           KanbanListId = 1
 
-    //};
+    };
     private string feedbackMessage = "";
 
     protected override async Task OnInitializedAsync()

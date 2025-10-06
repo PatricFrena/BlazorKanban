@@ -5,11 +5,6 @@ VisualStudioVersion = 17.12.35707.178
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BlazorKanban", "BlazorKanban.csproj", "{EABA47C7-9E39-4162-8925-E95337DC284D}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Itens de Solução", "Itens de Solução", "{8C90D5C7-ADF4-43DD-955F-BD875776EB12}"
-	ProjectSection(SolutionItems) = preProject
-		_Imports.razor = _Imports.razor
-	EndProjectSection
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
