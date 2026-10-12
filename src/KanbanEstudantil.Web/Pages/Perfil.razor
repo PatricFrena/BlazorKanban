@@ -1,0 +1,105 @@
+@page "/perfil"
+@inject PerfilService PerfilSvc
+
+<PageTitle>Perfil — StudyBoard</PageTitle>
+
+<div class="dashboard-page">
+    <div class="page-header">
+        <h1 class="page-title">⚙️ Perfil</h1>
+        <p class="page-subtitle">Configure suas informações acadêmicas.</p>
+    </div>
+
+    <div class="perfil-grid">
+        <div class="dash-panel">
+            <div class="panel-header"><h2 class="panel-title">Dados Pessoais</h2></div>
+            <div class="modal-body">
+                <AvisoErro Mensagem="@erro" />
+                <div class="perfil-avatar-row">
+                    <div class="perfil-avatar-big" style="background:@perfil.AvatarCor">
+                        @(perfil.Nome.Length > 0 ? perfil.Nome[0].ToString().ToUpper() : "?")
+                    </div>
+                    <div class="cor-picker">
+                        @foreach (var cor in new[] { "#6366f1","#10b981","#f59e0b","#ec4899","#3b82f6","#8b5cf6","#ef4444" })
+                        {
+                            <div class="cor-chip @(perfil.AvatarCor == cor ? "selected" : "")"
+                                 style="background:@cor" @onclick="() => perfil.AvatarCor = cor"></div>
+                        }
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Nome</label>
+                    <input class="form-input" @bind="perfil.Nome" maxlength="100" />
+                </div>
+                <div class="form-group">
+                    <label>E-mail</label>
+                    <input type="email" class="form-input" @bind="perfil.Email" maxlength="200" />
+                </div>
+                <div class="form-group">
+                    <label>Curso</label>
+                    <input class="form-input" @bind="perfil.Curso" maxlength="100" />
+                </div>
+                <div class="form-row">
+                    <div class="form-group flex-1">
+                        <label>Semestre atual</label>
+                        <input type="number" class="form-input" @bind="perfil.Semestre" min="1" max="20" />
+                    </div>
+                    <div class="form-group flex-1">
+                        <label>Horas complementares exigidas</label>
+                        <input type="number" class="form-input" @bind="perfil.HorasComplementaresExigidas" min="0" />
+                    </div>
+                </div>
+                <button class="btn-primary" @onclick="Salvar">💾 Salvar Perfil</button>
+                @if (salvo) { <span class="save-feedback">✅ Salvo!</span> }
+            </div>
+        </div>
+
+        <div class="dash-panel">
+            <div class="panel-header"><h2 class="panel-title">Sobre o StudyBoard</h2></div>
+            <div class="modal-body">
+                <p style="color:var(--color-text-muted);line-height:1.6">
+                    <strong>StudyBoard</strong> é um sistema Kanban universitário desenvolvido em <strong>Blazor Server + C#</strong>.
+                </p>
+                <br/>
+                <p style="color:var(--color-text-muted);line-height:1.6">
+                    Funcionalidades:
+                </p>
+                <ul style="color:var(--color-text-muted);line-height:2;margin-left:1rem">
+                    <li>✅ Kanban por disciplina com drag & drop</li>
+                    <li>✅ Controle de notas e médias</li>
+                    <li>✅ Alertas de faltas e reprovação</li>
+                    <li>✅ Timer Pomodoro integrado</li>
+                    <li>✅ Trabalhos em grupo com membros</li>
+                    <li>✅ Calendário de entregas</li>
+                    <li>✅ Velocímetro de horas complementares</li>
+                    <li>✅ Template de TCC com fases</li>
+                    <li>✅ Dados salvos em banco de dados</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    PerfilDto perfil = new() { Nome = "" };
+    string? erro;
+    bool salvo = false;
+
+    protected override async Task OnInitializedAsync() => perfil = await PerfilSvc.ObterAsync();
+
+    async Task Salvar()
+    {
+        erro = null;
+        try
+        {
+            await PerfilSvc.SalvarAsync(perfil);
+            salvo = true;
+            StateHasChanged();
+            await Task.Delay(2000);
+            salvo = false;
+        }
+        catch (DomainException ex)
+        {
+            erro = ex.Message;
+        }
+    }
+}

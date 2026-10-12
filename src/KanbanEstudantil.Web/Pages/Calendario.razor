@@ -1,0 +1,133 @@
+@page "/calendario"
+@inject DisciplinaService DisciplinaSvc
+@inject Alteracoes Mudancas
+@implements IDisposable
+
+<PageTitle>Calendário — StudyBoard</PageTitle>
+
+<div class="dashboard-page">
+    <div class="page-header">
+        <div>
+            <h1 class="page-title">📅 Calendário</h1>
+            <p class="page-subtitle">Visualize todas as suas entregas no tempo.</p>
+        </div>
+        <div class="cal-nav">
+            <button class="btn-outline" @onclick="MesAnterior" aria-label="Mês anterior">‹</button>
+            <span class="cal-titulo">@GetTituloMes()</span>
+            <button class="btn-outline" @onclick="ProximoMes" aria-label="Próximo mês">›</button>
+        </div>
+    </div>
+
+    <div class="cal-grid-header">
+        <div class="cal-day-label">Dom</div>
+        <div class="cal-day-label">Seg</div>
+        <div class="cal-day-label">Ter</div>
+        <div class="cal-day-label">Qua</div>
+        <div class="cal-day-label">Qui</div>
+        <div class="cal-day-label">Sex</div>
+        <div class="cal-day-label">Sáb</div>
+    </div>
+
+    <div class="cal-grid">
+        @foreach (var dia in DiasNoCalendario())
+        {
+            var isHoje = dia.HasValue && dia.Value == DateOnly.FromDateTime(DateTime.Today);
+            var eventos = dia.HasValue ? GetEventosDia(dia.Value) : new List<EventoCal>();
+
+            <div class="cal-cell @(isHoje ? "hoje" : "") @(!dia.HasValue ? "vazio" : "")">
+                @if (dia.HasValue)
+                {
+                    <span class="cal-num">@dia.Value.Day</span>
+                    @foreach (var ev in eventos.Take(3))
+                    {
+                        <div class="cal-evento" style="background:@ev.Cor" title="@ev.Titulo">
+                            @ev.Titulo
+                        </div>
+                    }
+                    @if (eventos.Count > 3)
+                    {
+                        <div class="cal-mais">+@(eventos.Count - 3) mais</div>
+                    }
+                }
+            </div>
+        }
+    </div>
+
+    <div class="cal-lista-mes">
+        <h2 class="panel-title" style="margin-bottom:14px">Entregas do mês</h2>
+        @{
+            var todosEventos = GetEventosMes();
+        }
+        @if (!todosEventos.Any())
+        {
+            <div class="empty-state">
+                <span class="empty-icon">📭</span>
+                <p>Sem entregas neste mês.</p>
+            </div>
+        }
+        @foreach (var ev in todosEventos.OrderBy(e => e.Data))
+        {
+            <div class="lista-evento-row">
+                <div class="lista-ev-data">@ev.Data.ToString("dd/MM")</div>
+                <div class="lista-ev-dot" style="background:@ev.Cor"></div>
+                <div class="lista-ev-info">
+                    <span class="lista-ev-titulo">@ev.Titulo</span>
+                    <span class="lista-ev-disc">@ev.Disciplina</span>
+                </div>
+                <div class="lista-ev-tags">
+                    @foreach (var tag in ev.Tags)
+                    {
+                        <span class="tag">@tag</span>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    DateOnly mesAtual = new(DateTime.Today.Year, DateTime.Today.Month, 1);
+    IReadOnlyList<DisciplinaDto> disciplinas = Array.Empty<DisciplinaDto>();
+
+    public record EventoCal(string Titulo, DateOnly Data, string Cor, string Disciplina, IReadOnlyList<string> Tags);
+
+    protected override async Task OnInitializedAsync()
+    {
+        Mudancas.Alterado += AoAlterar;
+        disciplinas = await DisciplinaSvc.ListarAsync();
+    }
+
+    void AoAlterar() => _ = InvokeAsync(async () =>
+    {
+        disciplinas = await DisciplinaSvc.ListarAsync();
+        StateHasChanged();
+    });
+
+    void MesAnterior() => mesAtual = mesAtual.AddMonths(-1);
+    void ProximoMes() => mesAtual = mesAtual.AddMonths(1);
+
+    string GetTituloMes() => mesAtual.ToString("MMMM yyyy", new System.Globalization.CultureInfo("pt-BR")).ToUpper();
+
+    List<DateOnly?> DiasNoCalendario()
+    {
+        var dias = new List<DateOnly?>();
+        var deslocamento = (int)mesAtual.DayOfWeek;
+        for (int i = 0; i < deslocamento; i++) dias.Add(null);
+        var ultimo = DateTime.DaysInMonth(mesAtual.Year, mesAtual.Month);
+        for (int d = 1; d <= ultimo; d++) dias.Add(new DateOnly(mesAtual.Year, mesAtual.Month, d));
+        while (dias.Count % 7 != 0) dias.Add(null);
+        return dias;
+    }
+
+    IEnumerable<EventoCal> Eventos() =>
+        disciplinas.SelectMany(d => d.Cards
+            .Where(c => c.DataEntrega.HasValue && c.Coluna != KanbanColuna.Concluido)
+            .Select(c => new EventoCal(c.Titulo, c.DataEntrega!.Value, d.Cor, d.Nome, c.Tags)));
+
+    List<EventoCal> GetEventosDia(DateOnly dia) => Eventos().Where(e => e.Data == dia).ToList();
+
+    List<EventoCal> GetEventosMes() =>
+        Eventos().Where(e => e.Data.Year == mesAtual.Year && e.Data.Month == mesAtual.Month).ToList();
+
+    public void Dispose() => Mudancas.Alterado -= AoAlterar;
+}

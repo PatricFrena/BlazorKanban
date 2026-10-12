@@ -1,0 +1,203 @@
+@page "/horas"
+@inject HoraComplementarService HorasSvc
+@inject Alteracoes Mudancas
+@implements IDisposable
+
+<PageTitle>Horas Complementares — StudyBoard</PageTitle>
+
+<div class="dashboard-page">
+    <div class="page-header">
+        <div>
+            <h1 class="page-title">🎓 Horas Complementares</h1>
+            <p class="page-subtitle">Controle sua carga horária extracurricular.</p>
+        </div>
+        <button class="btn-primary" @onclick="AbrirModal">＋ Adicionar</button>
+    </div>
+
+    <AvisoErro Mensagem="@erro" />
+
+    <!-- Velocímetro / Progress -->
+    <div class="horas-hero">
+        <div class="horas-gauge">
+            <svg viewBox="0 0 200 120" class="gauge-svg">
+                <!-- Track -->
+                <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="var(--color-border)" stroke-width="14" stroke-linecap="round"/>
+                <!-- Fill -->
+                <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="#6366f1" stroke-width="14"
+                      stroke-linecap="round"
+                      stroke-dasharray="@Formato.Css(251.3 * resumo.Progresso / 100) 251.3"/>
+                <text x="100" y="90" text-anchor="middle" font-size="28" font-weight="700" fill="var(--color-text)">@resumo.Total.ToString("0")</text>
+                <text x="100" y="108" text-anchor="middle" font-size="11" fill="var(--color-text-muted)">de @resumo.Exigidas.ToString("0") horas</text>
+            </svg>
+        </div>
+        <div class="horas-gauge-stats">
+            <div class="gauge-stat">
+                <span class="gs-val">@resumo.Progresso.ToString("0")%</span>
+                <span class="gs-lbl">Concluído</span>
+            </div>
+            <div class="gauge-stat">
+                <span class="gs-val">@resumo.Validadas</span>
+                <span class="gs-lbl">Validadas</span>
+            </div>
+            <div class="gauge-stat">
+                <span class="gs-val">@resumo.Restantes.ToString("0")h</span>
+                <span class="gs-lbl">Restantes</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Lista de horas por categoria -->
+    @foreach (var tipo in Enum.GetValues<TipoHoraComplementar>())
+    {
+        var itens = horas.Where(h => h.Tipo == tipo).ToList();
+        if (!itens.Any()) continue;
+        <div class="horas-categoria">
+            <div class="cat-header">
+                <span class="cat-nome">@tipo.ToLabel()</span>
+                <span class="cat-total">@itens.Sum(i => i.Horas).ToString("0")h</span>
+            </div>
+            @foreach (var h in itens.OrderByDescending(x => x.Data))
+            {
+                <div class="hora-row @(h.Validado ? "validado" : "pendente")">
+                    <div class="hora-status">@(h.Validado ? "✅" : "⏳")</div>
+                    <div class="hora-info">
+                        <span class="hora-titulo">@h.Titulo</span>
+                        @if (!string.IsNullOrEmpty(h.Descricao))
+                        {
+                            <span class="hora-desc">@h.Descricao</span>
+                        }
+                        <span class="hora-data">@h.Data.ToString("dd/MM/yyyy")</span>
+                    </div>
+                    <div class="hora-horas-badge">@h.Horas.ToString("0")h</div>
+                    <button class="btn-icon" @onclick="() => Remover(h.Id)" title="Remover" aria-label="Remover">🗑</button>
+                </div>
+            }
+        </div>
+    }
+
+    @if (!horas.Any())
+    {
+        <div class="empty-state">
+            <span class="empty-icon">🎓</span>
+            <p>Nenhuma hora complementar cadastrada ainda.</p>
+        </div>
+    }
+</div>
+
+@if (mostrarModal)
+{
+    <div class="modal-overlay" @onclick="() => mostrarModal = false">
+        <div class="modal-box medium" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>Adicionar Hora Complementar</h3>
+                <button class="modal-close" @onclick="() => mostrarModal = false" aria-label="Fechar">✕</button>
+            </div>
+            <div class="modal-body">
+                <AvisoErro Mensagem="@erroModal" />
+                <div class="form-group">
+                    <label>Título *</label>
+                    <input class="form-input" @bind="nova.Titulo" maxlength="150" placeholder="Ex: Curso de Python" />
+                </div>
+                <div class="form-group">
+                    <label>Descrição</label>
+                    <input class="form-input" @bind="nova.Descricao" maxlength="500" placeholder="Detalhes opcionais" />
+                </div>
+                <div class="form-row">
+                    <div class="form-group flex-1">
+                        <label>Tipo</label>
+                        <select class="form-select" @bind="nova.Tipo">
+                            @foreach (var t in Enum.GetValues<TipoHoraComplementar>())
+                            {
+                                <option value="@t">@t.ToLabel()</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="form-group flex-1">
+                        <label>Horas</label>
+                        <input type="number" class="form-input" @bind="nova.Horas" min="1" max="300" />
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group flex-1">
+                        <label>Data</label>
+                        <input type="date" class="form-input" @bind="nova.Data" />
+                    </div>
+                    <div class="form-group flex-1">
+                        <label>Validado?</label>
+                        <label class="toggle-label">
+                            <input type="checkbox" @bind="nova.Validado" />
+                            <span>@(nova.Validado ? "Sim" : "Não")</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Link do Certificado (opcional)</label>
+                    <input class="form-input" @bind="nova.CertificadoUrl" maxlength="2000" placeholder="https://..." />
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-outline" @onclick="() => mostrarModal = false">Cancelar</button>
+                <button class="btn-primary" @onclick="Adicionar" disabled="@(string.IsNullOrWhiteSpace(nova.Titulo) || nova.Horas <= 0)">
+                    Adicionar
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    bool mostrarModal = false;
+    string? erro;
+    string? erroModal;
+    HoraComplementarDto nova = new();
+    IReadOnlyList<HoraComplementarDto> horas = Array.Empty<HoraComplementarDto>();
+    ResumoHorasDto resumo = new(0, 0, 0, 0, 0);
+
+    protected override async Task OnInitializedAsync()
+    {
+        Mudancas.Alterado += AoAlterar;
+        await Carregar();
+    }
+
+    async Task Carregar()
+    {
+        horas = await HorasSvc.ListarAsync();
+        resumo = await HorasSvc.ObterResumoAsync();
+    }
+
+    void AoAlterar() => _ = InvokeAsync(async () =>
+    {
+        await Carregar();
+        StateHasChanged();
+    });
+
+    void AbrirModal()
+    {
+        nova = new HoraComplementarDto { Data = DateOnly.FromDateTime(DateTime.Today) };
+        erroModal = null;
+        mostrarModal = true;
+    }
+
+    async Task Adicionar()
+    {
+        erroModal = null;
+        try
+        {
+            await HorasSvc.AdicionarAsync(nova);
+            mostrarModal = false;
+        }
+        catch (DomainException ex)
+        {
+            erroModal = ex.Message;
+        }
+    }
+
+    async Task Remover(Guid id)
+    {
+        erro = null;
+        try { await HorasSvc.RemoverAsync(id); }
+        catch (DomainException ex) { erro = ex.Message; }
+    }
+
+    public void Dispose() => Mudancas.Alterado -= AoAlterar;
+}

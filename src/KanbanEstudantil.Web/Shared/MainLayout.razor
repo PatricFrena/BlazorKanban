@@ -1,0 +1,129 @@
+@inherits LayoutComponentBase
+@inject DisciplinaService DisciplinaSvc
+@inject HoraComplementarService HorasSvc
+@inject PerfilService PerfilSvc
+@inject Alteracoes Mudancas
+@implements IDisposable
+
+<div class="app-shell @(SidebarOpen ? "sidebar-open" : "")">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="sidebar-brand">
+            <div class="brand-icon">📚</div>
+            <div class="brand-text">
+                <span class="brand-name">StudyBoard</span>
+                <span class="brand-sub">Kanban Universitário</span>
+            </div>
+        </div>
+
+        <div class="sidebar-user">
+            <div class="user-avatar" style="background:@perfil.AvatarCor">@GetInicialNome()</div>
+            <div class="user-info">
+                <span class="user-name">@perfil.Nome</span>
+                <span class="user-curso">@perfil.Curso · @perfil.Semestre°sem</span>
+            </div>
+        </div>
+
+        <nav class="sidebar-nav">
+            <div class="nav-section-label">Principal</div>
+            <NavLink class="nav-item" ActiveClass="active" href="" Match="NavLinkMatch.All">
+                <span class="nav-icon">🏠</span><span>Dashboard</span>
+            </NavLink>
+            <NavLink class="nav-item" ActiveClass="active" href="calendario">
+                <span class="nav-icon">📅</span><span>Calendário</span>
+            </NavLink>
+
+            <div class="nav-section-label" style="margin-top:1rem">Disciplinas</div>
+            @foreach (var d in disciplinas)
+            {
+                <NavLink class="nav-item disciplina-item" ActiveClass="active" href="@("kanban/" + d.Id)">
+                    <span class="disc-dot" style="background:@d.Cor"></span>
+                    <span class="nav-disc-name">@d.Nome</span>
+                    @if (d.EmRiscoDeFalta)
+                    {
+                        <span class="nav-badge warn" title="Risco de falta">⚠️</span>
+                    }
+                </NavLink>
+            }
+            <button class="nav-item add-disc-btn" @onclick="AbrirModalDisciplina">
+                <span class="nav-icon">＋</span><span>Nova Disciplina</span>
+            </button>
+
+            <div class="nav-section-label" style="margin-top:1rem">Formação</div>
+            <NavLink class="nav-item" ActiveClass="active" href="horas">
+                <span class="nav-icon">🎓</span><span>Horas Complementares</span>
+                <span class="nav-badge info">@resumoHoras.Total.ToString("0")h</span>
+            </NavLink>
+            <NavLink class="nav-item" ActiveClass="active" href="tcc">
+                <span class="nav-icon">📖</span><span>TCC / Estágio</span>
+            </NavLink>
+            <NavLink class="nav-item" ActiveClass="active" href="perfil">
+                <span class="nav-icon">⚙️</span><span>Perfil</span>
+            </NavLink>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="horas-mini">
+                <span>Horas Complementares</span>
+                <span class="horas-val">@resumoHoras.Total.ToString("0") / @resumoHoras.Exigidas.ToString("0")h</span>
+            </div>
+            <div class="progress-bar-wrap">
+                <div class="progress-bar-fill" style="width:@resumoHoras.Progresso.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)%"></div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main -->
+    <div class="main-area">
+        <header class="top-bar">
+            <button class="hamburger" @onclick="ToggleSidebar" aria-label="Abrir ou fechar o menu">☰</button>
+            <div class="top-bar-right">
+                <span class="data-hoje">@DateTime.Today.ToString("dddd, dd 'de' MMMM", new System.Globalization.CultureInfo("pt-BR"))</span>
+            </div>
+        </header>
+
+        <main class="content-area">
+            @Body
+        </main>
+    </div>
+</div>
+
+@if (MostrarModalDisciplina)
+{
+    <ModalDisciplina OnClose="@FecharModalDisciplina" OnSaved="@FecharModalDisciplina" />
+}
+
+@code {
+    bool SidebarOpen = true;
+    bool MostrarModalDisciplina = false;
+    PerfilDto perfil = new() { Nome = "Estudante" };
+    IReadOnlyList<DisciplinaDto> disciplinas = Array.Empty<DisciplinaDto>();
+    ResumoHorasDto resumoHoras = new(0, 0, 0, 0, 0);
+
+    protected override async Task OnInitializedAsync()
+    {
+        Mudancas.Alterado += AoAlterar;
+        await Carregar();
+    }
+
+    async Task Carregar()
+    {
+        perfil = await PerfilSvc.ObterAsync();
+        disciplinas = await DisciplinaSvc.ListarAsync();
+        resumoHoras = await HorasSvc.ObterResumoAsync();
+    }
+
+    void AoAlterar() => _ = InvokeAsync(async () =>
+    {
+        await Carregar();
+        StateHasChanged();
+    });
+
+    string GetInicialNome() => perfil.Nome.Length > 0 ? perfil.Nome[0].ToString().ToUpper() : "U";
+
+    void ToggleSidebar() => SidebarOpen = !SidebarOpen;
+    void AbrirModalDisciplina() => MostrarModalDisciplina = true;
+    void FecharModalDisciplina() => MostrarModalDisciplina = false;
+
+    public void Dispose() => Mudancas.Alterado -= AoAlterar;
+}

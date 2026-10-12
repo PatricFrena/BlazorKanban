@@ -1,0 +1,400 @@
+@inject CardService CardSvc
+@implements IDisposable
+
+<div class="modal-overlay" @onclick="OnClose">
+    <div class="modal-box large card-modal" @onclick:stopPropagation="true">
+        <div class="modal-header" style="border-left: 4px solid @Disciplina.Cor">
+            <h3>@(IsNew ? "Nova Tarefa" : "Editar Tarefa")</h3>
+            <button class="modal-close" @onclick="OnClose" aria-label="Fechar">✕</button>
+        </div>
+
+        <div class="modal-body card-modal-body">
+            <!-- Coluna Esquerda: Formulário -->
+            <div class="card-form-col">
+                <AvisoErro Mensagem="@erro" />
+
+                <div class="form-group">
+                    <label>Título *</label>
+                    <input class="form-input" @bind="card.Titulo" maxlength="150" placeholder="Ex: Estudar para prova de Cálculo" />
+                </div>
+
+                <div class="form-group">
+                    <label>Descrição</label>
+                    <textarea class="form-textarea" @bind="card.Descricao" maxlength="2000" placeholder="Detalhes sobre a tarefa..." rows="2"></textarea>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group flex-1">
+                        <label>Coluna</label>
+                        <select class="form-select" @bind="card.Coluna">
+                            @foreach (var c in Enum.GetValues<KanbanColuna>())
+                            {
+                                <option value="@c">@c.ToLabel()</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="form-group flex-1">
+                        <label>Prioridade</label>
+                        <select class="form-select" @bind="card.Prioridade">
+                            <option value="@Prioridade.Alta">🔴 Alta</option>
+                            <option value="@Prioridade.Media">🟡 Média</option>
+                            <option value="@Prioridade.Baixa">🟢 Baixa</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group flex-1">
+                        <label>Data de Entrega</label>
+                        <input type="date" class="form-input" @bind="card.DataEntrega" />
+                    </div>
+                    <div class="form-group flex-1">
+                        <label>Peso na nota (%)</label>
+                        <input type="number" class="form-input" min="0" max="100" @bind="card.PesoNota" />
+                    </div>
+                </div>
+
+                @if (card.PesoNota > 0 && card.Coluna == KanbanColuna.Concluido)
+                {
+                    <div class="form-group">
+                        <label>Nota Obtida</label>
+                        <input type="number" class="form-input" min="0" max="10" step="0.1" @bind="card.NotaObtida" />
+                    </div>
+                }
+
+                <!-- Tags -->
+                <div class="form-group">
+                    <label>Tags</label>
+                    <div class="tags-editor">
+                        <div class="tags-list">
+                            @foreach (var tag in card.Tags)
+                            {
+                                <span class="tag removable" @onclick="() => RemoverTag(tag)">@tag ✕</span>
+                            }
+                        </div>
+                        <div class="tags-preset">
+                            @foreach (var t in tagsPreset)
+                            {
+                                <span class="tag-preset @(card.Tags.Contains(t) ? "active" : "")"
+                                      @onclick="() => ToggleTag(t)">@t</span>
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Subtarefas -->
+                <div class="form-group">
+                    <label>Checklist (@card.SubtarefasConcluidas/@card.Subtarefas.Count)</label>
+                    <div class="subtarefas-editor">
+                        @foreach (var sub in card.Subtarefas)
+                        {
+                            <div class="subtarefa-row">
+                                <input type="checkbox" @bind="sub.Concluida" aria-label="Concluída" />
+                                <input class="form-input sub-input" @bind="sub.Titulo" maxlength="200" />
+                                <button class="btn-icon" @onclick="() => RemoverSub(sub)" aria-label="Remover subtarefa">🗑</button>
+                            </div>
+                        }
+                        <div class="add-sub-row">
+                            <input class="form-input" placeholder="Nova subtarefa..." maxlength="200" @bind="novaSub"
+                                   @onkeydown="OnSubKeyDown" />
+                            <button class="btn-sm btn-outline" @onclick="AdicionarSub" aria-label="Adicionar subtarefa">＋</button>
+                        </div>
+                        @if (card.Subtarefas.Any())
+                        {
+                            <div class="progress-bar-wrap" style="margin-top:6px">
+                                <div class="progress-bar-fill" style="width:@Formato.Percentual(card.ProgressoSubtarefas)"></div>
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                <!-- Membros -->
+                <div class="form-group">
+                    <label>Membros do Grupo</label>
+                    <div class="membros-editor">
+                        @foreach (var m in card.Membros)
+                        {
+                            <div class="membro-chip">
+                                <div class="mini-avatar" style="background:@m.AvatarCor">@m.Nome[0]</div>
+                                <span>@m.Nome</span>
+                                <button class="btn-icon" @onclick="() => RemoverMembro(m)" aria-label="Remover membro">✕</button>
+                            </div>
+                        }
+                        <div class="add-membro-row">
+                            <input class="form-input" placeholder="Nome do membro" maxlength="100" @bind="novoMembroNome" />
+                            <input class="form-input" placeholder="E-mail" maxlength="200" @bind="novoMembroEmail" />
+                            <button class="btn-sm btn-outline" @onclick="AdicionarMembro" aria-label="Adicionar membro">＋</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Anexos -->
+                <div class="form-group">
+                    <label>Anexos / Links</label>
+                    <div class="anexos-list">
+                        @foreach (var a in card.Anexos)
+                        {
+                            <div class="anexo-row">
+                                <span>@a.Tipo.ToLabel()</span>
+                                <a href="@a.Url" target="_blank" rel="noopener noreferrer" class="anexo-link">@a.Nome</a>
+                                <button class="btn-icon" @onclick="() => RemoverAnexo(a)" aria-label="Remover anexo">🗑</button>
+                            </div>
+                        }
+                        <div class="add-anexo-row">
+                            <input class="form-input" placeholder="Nome do anexo" maxlength="200" @bind="novoAnexoNome" />
+                            <input class="form-input" placeholder="https://..." maxlength="2000" @bind="novoAnexoUrl" />
+                            <button class="btn-sm btn-outline" @onclick="AdicionarAnexo" aria-label="Adicionar anexo">＋</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Coluna Direita: Pomodoro + Log -->
+            <div class="card-side-col">
+                <!-- Pomodoro Timer -->
+                <div class="pomodoro-widget">
+                    <div class="pomodoro-header">🍅 Timer Pomodoro</div>
+                    <div class="pomodoro-display">
+                        <div class="pomodoro-time @(emPausa ? "pausa" : pomodoroAtivo ? "ativo" : "")">
+                            @minutos.ToString("00"):@segundos.ToString("00")
+                        </div>
+                        <div class="pomodoro-fase">@(emPausa ? "☕ Pausa" : pomodoroAtivo ? "🎯 Foco" : "Pronto")</div>
+                    </div>
+                    <div class="pomodoro-btns">
+                        @if (IsNew)
+                        {
+                            <p class="log-empty">Salve a tarefa para usar o timer.</p>
+                        }
+                        else if (!pomodoroAtivo && !emPausa)
+                        {
+                            <button class="btn-primary" @onclick="IniciarPomodoro">▶ Iniciar Foco</button>
+                        }
+                        else
+                        {
+                            <button class="btn-outline" @onclick="PararPomodoro">⏹ Parar</button>
+                        }
+                    </div>
+                    <div class="pomodoro-stats">
+                        <span>Sessões concluídas: @card.PomodorosConcluidos</span>
+                    </div>
+                    <div class="pomodoro-progress-ring">
+                        <svg viewBox="0 0 60 60">
+                            <circle cx="30" cy="30" r="26" fill="none" stroke="var(--color-border)" stroke-width="4"/>
+                            <circle cx="30" cy="30" r="26" fill="none" stroke="#ef4444" stroke-width="4"
+                                    stroke-dasharray="@Formato.Css(163.4 * PomodoroProgresso / 100) 163.4"
+                                    stroke-linecap="round"
+                                    transform="rotate(-90 30 30)"/>
+                        </svg>
+                    </div>
+                </div>
+
+                <!-- Log de Atividades -->
+                <div class="log-widget">
+                    <div class="log-header">📝 Histórico</div>
+                    <div class="log-list">
+                        @foreach (var log in card.Logs.Take(10))
+                        {
+                            <div class="log-row">
+                                <span class="log-user">@log.Usuario</span>
+                                <span class="log-desc">@log.Descricao</span>
+                                <span class="log-time">@log.DataHoraUtc.ToLocalTime().ToString("dd/MM HH:mm")</span>
+                            </div>
+                        }
+                        @if (!card.Logs.Any())
+                        {
+                            <p class="log-empty">Nenhuma atividade registrada.</p>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal-footer">
+            @if (!IsNew)
+            {
+                <button class="btn-danger" @onclick="Excluir" disabled="@ocupado">🗑 Excluir</button>
+            }
+            <div style="flex:1"></div>
+            <button class="btn-outline" @onclick="OnClose">Cancelar</button>
+            <button class="btn-primary" @onclick="Salvar" disabled="@(ocupado || string.IsNullOrWhiteSpace(card.Titulo))">
+                @(IsNew ? "Criar Tarefa" : "Salvar")
+            </button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public CardDto Card { get; set; } = new();
+    [Parameter] public DisciplinaDto Disciplina { get; set; } = new();
+    [Parameter] public bool IsNew { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnSaved { get; set; }
+
+    CardDto card = new();
+    Guid? origemId;
+    bool inicializado;
+    bool ocupado;
+    string? erro;
+
+    string novaSub = "";
+    string novoMembroNome = "", novoMembroEmail = "";
+    string novoAnexoNome = "", novoAnexoUrl = "";
+    string[] tagsPreset = { "#Prova", "#TrabalhoEmGrupo", "#LeituraObrigatória", "#AtividadePrática", "#Seminário" };
+    string[] coresMembros = { "#6366f1", "#10b981", "#f59e0b", "#ec4899", "#3b82f6", "#8b5cf6" };
+
+    // Pomodoro
+    const int SegundosFoco = 25 * 60;
+    const int SegundosPausa = 5 * 60;
+    bool pomodoroAtivo = false;
+    bool emPausa = false;
+    int minutos = 25, segundos = 0;
+    int totalSegundos = SegundosFoco;
+    int segundosRestantes = SegundosFoco;
+    DateTime inicioFocoUtc;
+    System.Threading.Timer? timer;
+
+    double PomodoroProgresso => ((double)(totalSegundos - segundosRestantes) / totalSegundos) * 100;
+
+    protected override void OnParametersSet()
+    {
+        // Copia o card uma vez (e de novo só se trocar de card). Quando a página recarrega os
+        // dados enquanto o modal está aberto, o que o usuário já digitou não é perdido.
+        if (inicializado && origemId == Card.Id) return;
+
+        card = Card.Clonar();
+        origemId = Card.Id;
+        inicializado = true;
+    }
+
+    async Task Salvar()
+    {
+        await Executar(async () =>
+        {
+            if (IsNew) await CardSvc.CriarAsync(Disciplina.Id, card);
+            else await CardSvc.AtualizarAsync(Disciplina.Id, card);
+        });
+    }
+
+    async Task Excluir() => await Executar(() => CardSvc.RemoverAsync(Disciplina.Id, card.Id));
+
+    async Task Executar(Func<Task> acao)
+    {
+        erro = null;
+        ocupado = true;
+        try
+        {
+            await acao();
+            await OnSaved.InvokeAsync();
+        }
+        catch (DomainException ex)
+        {
+            erro = ex.Message;
+        }
+        finally
+        {
+            ocupado = false;
+        }
+    }
+
+    void RemoverTag(string t) => card.Tags.Remove(t);
+    void ToggleTag(string t) { if (!card.Tags.Remove(t)) card.Tags.Add(t); }
+
+    void AdicionarSub()
+    {
+        if (!string.IsNullOrWhiteSpace(novaSub))
+        {
+            card.Subtarefas.Add(new SubtarefaDto { Titulo = novaSub.Trim() });
+            novaSub = "";
+        }
+    }
+
+    void OnSubKeyDown(KeyboardEventArgs e) { if (e.Key == "Enter") AdicionarSub(); }
+    void RemoverSub(SubtarefaDto s) => card.Subtarefas.Remove(s);
+
+    void AdicionarMembro()
+    {
+        if (!string.IsNullOrWhiteSpace(novoMembroNome))
+        {
+            card.Membros.Add(new MembroDto
+            {
+                Nome = novoMembroNome.Trim(),
+                Email = novoMembroEmail.Trim(),
+                AvatarCor = coresMembros[card.Membros.Count % coresMembros.Length]
+            });
+            novoMembroNome = ""; novoMembroEmail = "";
+        }
+    }
+
+    void RemoverMembro(MembroDto m) => card.Membros.Remove(m);
+
+    void AdicionarAnexo()
+    {
+        if (!string.IsNullOrWhiteSpace(novoAnexoUrl))
+        {
+            card.Anexos.Add(new AnexoDto { Nome = novoAnexoNome.Trim(), Url = novoAnexoUrl.Trim() });
+            novoAnexoNome = ""; novoAnexoUrl = "";
+        }
+    }
+
+    void RemoverAnexo(AnexoDto a) => card.Anexos.Remove(a);
+
+    // ─── Pomodoro ─────────────────────────────────────────────────────
+    void IniciarPomodoro()
+    {
+        pomodoroAtivo = true;
+        emPausa = false;
+        totalSegundos = segundosRestantes = SegundosFoco;
+        minutos = 25; segundos = 0;
+        inicioFocoUtc = DateTime.UtcNow;
+        timer?.Dispose();
+        // O timer roda em outra thread: o trabalho volta para o contexto do componente via InvokeAsync.
+        timer = new System.Threading.Timer(_ => _ = InvokeAsync(TickAsync), null, 1000, 1000);
+    }
+
+    async Task TickAsync()
+    {
+        if (segundosRestantes > 0)
+        {
+            segundosRestantes--;
+        }
+        else if (!emPausa)
+        {
+            // Foco concluído: grava a sessão e começa a pausa.
+            await RegistrarSessaoAsync();
+            emPausa = true;
+            pomodoroAtivo = false;
+            totalSegundos = segundosRestantes = SegundosPausa;
+        }
+        else
+        {
+            PararPomodoro();
+        }
+
+        minutos = segundosRestantes / 60;
+        segundos = segundosRestantes % 60;
+        StateHasChanged();
+    }
+
+    async Task RegistrarSessaoAsync()
+    {
+        try
+        {
+            await CardSvc.RegistrarPomodoroAsync(Disciplina.Id, card.Id, inicioFocoUtc, DateTime.UtcNow);
+            card.PomodorosConcluidos++;
+        }
+        catch (DomainException ex)
+        {
+            erro = ex.Message;
+        }
+    }
+
+    void PararPomodoro()
+    {
+        timer?.Dispose(); timer = null;
+        pomodoroAtivo = false; emPausa = false;
+        totalSegundos = segundosRestantes = SegundosFoco;
+        minutos = 25; segundos = 0;
+    }
+
+    public void Dispose() => timer?.Dispose();
+}

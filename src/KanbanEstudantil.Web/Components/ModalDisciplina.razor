@@ -1,0 +1,81 @@
+@inject DisciplinaService DisciplinaSvc
+
+<div class="modal-overlay" @onclick="OnClose">
+    <div class="modal-box medium" @onclick:stopPropagation="true">
+        <div class="modal-header">
+            <h3>Nova Disciplina</h3>
+            <button class="modal-close" @onclick="OnClose" aria-label="Fechar">✕</button>
+        </div>
+        <div class="modal-body">
+            <AvisoErro Mensagem="@erro" />
+            <div class="form-group">
+                <label>Nome da Disciplina *</label>
+                <input class="form-input" @bind="disc.Nome" maxlength="100" placeholder="Ex: Cálculo I" />
+            </div>
+            <div class="form-group">
+                <label>Professor(a)</label>
+                <input class="form-input" @bind="disc.Professor" maxlength="100" placeholder="Nome do professor" />
+            </div>
+            <div class="form-row">
+                <div class="form-group flex-1">
+                    <label>Carga Horária</label>
+                    <input type="number" class="form-input" @bind="disc.CargaHoraria" min="30" max="200" />
+                </div>
+                <div class="form-group flex-1">
+                    <label>Cor</label>
+                    <div class="cor-picker">
+                        @foreach (var cor in cores)
+                        {
+                            <div class="cor-chip @(disc.Cor == cor ? "selected" : "")"
+                                 style="background:@cor"
+                                 @onclick="() => disc.Cor = cor"></div>
+                        }
+                    </div>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Preview</label>
+                <div class="disc-preview" style="border-left: 4px solid @disc.Cor; padding: 8px 12px; background: var(--color-card); border-radius: 6px;">
+                    <strong>@(string.IsNullOrEmpty(disc.Nome) ? "Nome da Disciplina" : disc.Nome)</strong>
+                    <small> — @(string.IsNullOrEmpty(disc.Professor) ? "Professor" : disc.Professor)</small>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-outline" @onclick="OnClose">Cancelar</button>
+            <button class="btn-primary" @onclick="Salvar" disabled="@(salvando || string.IsNullOrWhiteSpace(disc.Nome))">
+                Criar Disciplina
+            </button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnSaved { get; set; }
+
+    NovaDisciplinaDto disc = new();
+    string? erro;
+    bool salvando;
+
+    string[] cores = { "#6366f1", "#10b981", "#f59e0b", "#ec4899", "#3b82f6", "#8b5cf6", "#ef4444", "#14b8a6", "#f97316" };
+
+    async Task Salvar()
+    {
+        erro = null;
+        salvando = true;
+        try
+        {
+            await DisciplinaSvc.CriarAsync(disc);
+            await OnSaved.InvokeAsync();
+        }
+        catch (DomainException ex)
+        {
+            erro = ex.Message;
+        }
+        finally
+        {
+            salvando = false;
+        }
+    }
+}

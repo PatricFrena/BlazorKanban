@@ -1,0 +1,176 @@
+@page "/tcc"
+@inject TccService TccSvc
+
+<PageTitle>TCC — StudyBoard</PageTitle>
+
+<div class="dashboard-page">
+    <div class="page-header">
+        <div>
+            <h1 class="page-title">📖 TCC / Estágio</h1>
+            <p class="page-subtitle">Acompanhe as fases do seu trabalho de conclusão.</p>
+        </div>
+        @if (!carregando && tcc == null)
+        {
+            <button class="btn-primary" @onclick="CriarTCC">＋ Iniciar TCC</button>
+        }
+    </div>
+
+    <AvisoErro Mensagem="@erro" />
+
+    @if (carregando)
+    {
+        <div class="page-empty"><p>Carregando...</p></div>
+    }
+    else if (tcc == null)
+    {
+        <div class="empty-state large">
+            <span class="empty-icon" style="font-size:3rem">📚</span>
+            <h3>Nenhum TCC configurado</h3>
+            <p>Clique em "Iniciar TCC" para configurar o template das fases.</p>
+        </div>
+    }
+    else
+    {
+        <!-- Header TCC -->
+        <div class="tcc-header-card">
+            <div class="tcc-header-info">
+                <h2>@tcc.Titulo</h2>
+                <p>Orientador: <strong>@(string.IsNullOrEmpty(tcc.Orientador) ? "não informado" : tcc.Orientador)</strong></p>
+                <div class="tcc-progress-wrap">
+                    @{ var pct = Progresso(); }
+                    <div class="tcc-progress-track">
+                        <div class="tcc-progress-fill-lg" style="width:@Formato.Percentual(pct)"></div>
+                    </div>
+                    <span class="tcc-pct">@pct.ToString("0")% concluído</span>
+                </div>
+            </div>
+            <button class="btn-outline" @onclick="AbrirEdicao">✏️ Editar</button>
+        </div>
+
+        <!-- Fases -->
+        <div class="tcc-fases-grid">
+            @for (int i = 0; i < tcc.Fases.Count; i++)
+            {
+                var fase = tcc.Fases[i];
+                var atual = i == FaseAtual();
+                <div class="fase-card @(fase.Concluida ? "concluida" : "") @(atual ? "atual" : "")">
+                    <div class="fase-numero">@(i + 1)</div>
+                    <div class="fase-info">
+                        <label class="fase-titulo-label">
+                            <input type="checkbox" @bind="fase.Concluida" />
+                            <span>@fase.Nome</span>
+                        </label>
+                        @if (fase.Prazo.HasValue)
+                        {
+                            <span class="fase-prazo">📅 @fase.Prazo.Value.ToString("dd/MM/yyyy")</span>
+                        }
+                        <textarea class="form-textarea small" placeholder="Anotações..." maxlength="2000" @bind="fase.Notas" @bind:event="oninput" rows="2"></textarea>
+                    </div>
+                    <div class="fase-status-icon">
+                        @(fase.Concluida ? "✅" : atual ? "🎯" : "⭕")
+                    </div>
+                </div>
+            }
+        </div>
+
+        <!-- Botões de fase -->
+        <div class="tcc-actions">
+            <button class="btn-outline" @onclick="AdicionarFase">＋ Adicionar Fase</button>
+            <button class="btn-primary" @onclick="Salvar">💾 Salvar Progresso</button>
+            @if (salvo) { <span class="save-feedback">✅ Salvo!</span> }
+        </div>
+    }
+</div>
+
+@if (editandoTCC && tcc != null)
+{
+    <div class="modal-overlay" @onclick="() => editandoTCC = false">
+        <div class="modal-box medium" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>Editar TCC</h3>
+                <button class="modal-close" @onclick="() => editandoTCC = false" aria-label="Fechar">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Título do TCC</label>
+                    <input class="form-input" @bind="tcc.Titulo" maxlength="200" />
+                </div>
+                <div class="form-group">
+                    <label>Orientador</label>
+                    <input class="form-input" @bind="tcc.Orientador" maxlength="100" />
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-outline" @onclick="CancelarEdicao">Cancelar</button>
+                <button class="btn-primary" @onclick="Salvar">Salvar</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    ProjetoTccDto? tcc;
+    string tituloOriginal = "", orientadorOriginal = "";
+    bool carregando = true;
+    bool editandoTCC = false;
+    bool salvo = false;
+    string? erro;
+
+    protected override async Task OnInitializedAsync()
+    {
+        tcc = await TccSvc.ObterAsync();
+        carregando = false;
+    }
+
+    double Progresso() => tcc == null || tcc.Fases.Count == 0 ? 0 : tcc.Fases.Count(f => f.Concluida) * 100.0 / tcc.Fases.Count;
+
+    int FaseAtual()
+    {
+        if (tcc == null) return 0;
+        var indice = tcc.Fases.FindIndex(f => !f.Concluida);
+        return indice >= 0 ? indice : Math.Max(0, tcc.Fases.Count - 1);
+    }
+
+    async Task CriarTCC()
+    {
+        erro = null;
+        try { tcc = await TccSvc.CriarComFasesPadraoAsync(); }
+        catch (DomainException ex) { erro = ex.Message; }
+    }
+
+    void AbrirEdicao()
+    {
+        tituloOriginal = tcc!.Titulo;
+        orientadorOriginal = tcc.Orientador;
+        editandoTCC = true;
+    }
+
+    void CancelarEdicao()
+    {
+        tcc!.Titulo = tituloOriginal;
+        tcc.Orientador = orientadorOriginal;
+        editandoTCC = false;
+    }
+
+    void AdicionarFase() => tcc?.Fases.Add(new FaseTccDto { Nome = $"Nova Fase {tcc.Fases.Count + 1}" });
+
+    async Task Salvar()
+    {
+        if (tcc == null) return;
+        erro = null;
+        try
+        {
+            await TccSvc.SalvarAsync(tcc);
+            tcc = await TccSvc.ObterAsync();
+            editandoTCC = false;
+            salvo = true;
+            StateHasChanged();
+            await Task.Delay(2000);
+            salvo = false;
+        }
+        catch (DomainException ex)
+        {
+            erro = ex.Message;
+        }
+    }
+}

@@ -1,0 +1,227 @@
+@page "/"
+@inject DisciplinaService DisciplinaSvc
+@inject TccService TccSvc
+@inject HoraComplementarService HorasSvc
+@inject PerfilService PerfilSvc
+@inject Alteracoes Mudancas
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>Dashboard — StudyBoard</PageTitle>
+
+<div class="dashboard-page">
+    <div class="page-header">
+        <div>
+            <h1 class="page-title">Olá, @GetPrimeiroNome()! 👋</h1>
+            <p class="page-subtitle">Aqui está o seu resumo acadêmico de hoje.</p>
+        </div>
+    </div>
+
+    <!-- Cards de Resumo -->
+    <div class="summary-grid">
+        <div class="summary-card indigo">
+            <div class="summary-icon">📋</div>
+            <div class="summary-body">
+                <span class="summary-value">@totalTarefasAbertas</span>
+                <span class="summary-label">Tarefas Abertas</span>
+            </div>
+        </div>
+        <div class="summary-card amber">
+            <div class="summary-icon">⏰</div>
+            <div class="summary-body">
+                <span class="summary-value">@tarefasHoje</span>
+                <span class="summary-label">Entregam Hoje</span>
+            </div>
+        </div>
+        <div class="summary-card emerald">
+            <div class="summary-icon">✅</div>
+            <div class="summary-body">
+                <span class="summary-value">@tarefasConcluidas</span>
+                <span class="summary-label">Concluídas</span>
+            </div>
+        </div>
+        <div class="summary-card rose">
+            <div class="summary-icon">⚠️</div>
+            <div class="summary-body">
+                <span class="summary-value">@disciplinasEmRisco</span>
+                <span class="summary-label">Risco de Falta</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="dashboard-grid">
+        <!-- Disciplinas e Médias -->
+        <div class="dash-panel">
+            <div class="panel-header">
+                <h2 class="panel-title">📊 Desempenho por Disciplina</h2>
+            </div>
+            <div class="disciplinas-list">
+                @foreach (var d in disciplinas)
+                {
+                    var discId = d.Id;
+                    <div class="disc-perf-row" @onclick="() => IrParaKanban(discId)" style="cursor:pointer">
+                        <div class="disc-dot-lg" style="background:@d.Cor"></div>
+                        <div class="disc-perf-info">
+                            <span class="disc-perf-nome">@d.Nome</span>
+                            <span class="disc-perf-prof">@d.Professor</span>
+                        </div>
+                        <div class="disc-perf-stats">
+                            <span class="disc-media" style="color:@(d.Media is >= 5 ? "#10b981" : "#ef4444")">
+                                @(d.Media.HasValue ? d.Media.Value.ToString("0.0") : "—")
+                            </span>
+                            <div class="disc-falta-bar" title="@d.PercentualFaltas.ToString("0")% de faltas">
+                                <div class="disc-falta-fill @(d.ReprovadoPorFalta ? "reprovado" : d.EmRiscoDeFalta ? "risco" : "ok")"
+                                     style="width:@Formato.Percentual(d.PercentualFaltas)"></div>
+                            </div>
+                            @if (d.EmRiscoDeFalta)
+                            {
+                                <span class="badge-risk">@d.PercentualFaltas.ToString("0")% faltas</span>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- Próximas Entregas -->
+        <div class="dash-panel">
+            <div class="panel-header">
+                <h2 class="panel-title">🔥 Próximas Entregas</h2>
+            </div>
+            <div class="entregas-list">
+                @if (!proximas.Any())
+                {
+                    <div class="empty-state">
+                        <span class="empty-icon">🎉</span>
+                        <p>Nenhuma entrega pendente!</p>
+                    </div>
+                }
+                @foreach (var item in proximas)
+                {
+                    var dias = item.Card.DataEntrega!.Value.DayNumber - hoje.DayNumber;
+                    var discId2 = item.Disc.Id;
+                    <div class="entrega-item @item.Card.Criticidade.ToString().ToLower()" @onclick="() => IrParaKanban(discId2)" style="cursor:pointer">
+                        <div class="entrega-disc-dot" style="background:@item.Disc.Cor"></div>
+                        <div class="entrega-info">
+                            <span class="entrega-titulo">@item.Card.Titulo</span>
+                            <span class="entrega-disc">@item.Disc.Nome</span>
+                        </div>
+                        <div class="entrega-prazo">
+                            @if (dias < 0) { <span class="prazo-badge atrasado">Atrasado</span> }
+                            else if (dias == 0) { <span class="prazo-badge hoje">Hoje</span> }
+                            else if (dias == 1) { <span class="prazo-badge urgente">Amanhã</span> }
+                            else { <span class="prazo-badge normal">@dias dias</span> }
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- TCC Progress -->
+        @if (tcc != null)
+        {
+            <div class="dash-panel tcc-panel">
+                <div class="panel-header">
+                    <h2 class="panel-title">📖 TCC</h2>
+                    <a href="tcc" class="panel-link">Ver detalhes →</a>
+                </div>
+                <p class="tcc-titulo-dash">@tcc.Titulo</p>
+                <p class="tcc-orientador">Orientador: @tcc.Orientador</p>
+                <div class="tcc-progress-bar">
+                    <div class="tcc-progress-fill" style="width:@Formato.Percentual(tcc.Progresso)"></div>
+                </div>
+                <div class="tcc-fases-mini">
+                    @foreach (var fase in tcc.Fases)
+                    {
+                        <span class="fase-chip @(fase.Concluida ? "done" : "")">@fase.Nome</span>
+                    }
+                </div>
+            </div>
+        }
+
+        <!-- Horas Complementares -->
+        <div class="dash-panel horas-panel">
+            <div class="panel-header">
+                <h2 class="panel-title">🎓 Horas Complementares</h2>
+                <a href="horas" class="panel-link">Ver todas →</a>
+            </div>
+            <div class="horas-circle-wrap">
+                <div class="horas-circle">
+                    <svg viewBox="0 0 80 80" class="circle-svg">
+                        <circle cx="40" cy="40" r="34" fill="none" stroke="var(--color-border)" stroke-width="8"/>
+                        <circle cx="40" cy="40" r="34" fill="none" stroke="#6366f1" stroke-width="8"
+                                stroke-dasharray="@Formato.Css(213.6 * resumoHoras.Progresso / 100) 213.6"
+                                stroke-linecap="round"
+                                transform="rotate(-90 40 40)"/>
+                    </svg>
+                    <div class="circle-label">
+                        <span class="circle-val">@resumoHoras.Total.ToString("0")</span>
+                        <span class="circle-sub">horas</span>
+                    </div>
+                </div>
+                <div class="horas-info">
+                    <p>@resumoHoras.Progresso.ToString("0")% concluído</p>
+                    <p>Meta: @resumoHoras.Exigidas.ToString("0")h</p>
+                    <p>Faltam: @resumoHoras.Restantes.ToString("0")h</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    record Entrega(CardDto Card, DisciplinaDto Disc);
+
+    PerfilDto perfil = new() { Nome = "Estudante" };
+    IReadOnlyList<DisciplinaDto> disciplinas = Array.Empty<DisciplinaDto>();
+    ProjetoTccDto? tcc;
+    ResumoHorasDto resumoHoras = new(0, 0, 0, 0, 0);
+    List<Entrega> proximas = new();
+    DateOnly hoje = DateOnly.FromDateTime(DateTime.Today);
+    int totalTarefasAbertas, tarefasHoje, tarefasConcluidas, disciplinasEmRisco;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Mudancas.Alterado += AoAlterar;
+        await Carregar();
+    }
+
+    async Task Carregar()
+    {
+        perfil = await PerfilSvc.ObterAsync();
+        disciplinas = await DisciplinaSvc.ListarAsync();
+        tcc = await TccSvc.ObterAsync();
+        resumoHoras = await HorasSvc.ObterResumoAsync();
+        Calcular();
+    }
+
+    void AoAlterar() => _ = InvokeAsync(async () =>
+    {
+        await Carregar();
+        StateHasChanged();
+    });
+
+    void Calcular()
+    {
+        hoje = DateOnly.FromDateTime(DateTime.Today);
+        var todos = disciplinas.SelectMany(d => d.Cards).ToList();
+        totalTarefasAbertas = todos.Count(c => c.Coluna != KanbanColuna.Concluido);
+        tarefasHoje = todos.Count(c => c.DataEntrega == hoje && c.Coluna != KanbanColuna.Concluido);
+        tarefasConcluidas = todos.Count(c => c.Coluna == KanbanColuna.Concluido);
+        disciplinasEmRisco = disciplinas.Count(d => d.EmRiscoDeFalta);
+
+        proximas = disciplinas
+            .SelectMany(d => d.Cards
+                .Where(c => c.DataEntrega.HasValue && c.Coluna != KanbanColuna.Concluido)
+                .Select(c => new Entrega(c, d)))
+            .OrderBy(x => x.Card.DataEntrega)
+            .Take(8)
+            .ToList();
+    }
+
+    string GetPrimeiroNome() => perfil.Nome.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "estudante";
+
+    void IrParaKanban(Guid id) => Nav.NavigateTo("kanban/" + id);
+
+    public void Dispose() => Mudancas.Alterado -= AoAlterar;
+}

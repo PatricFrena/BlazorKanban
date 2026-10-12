@@ -1,0 +1,393 @@
+@page "/kanban/{DisciplinaId:guid}"
+@inject DisciplinaService DisciplinaSvc
+@inject CardService CardSvc
+@inject Alteracoes Mudancas
+@implements IDisposable
+
+<PageTitle>Kanban — @(disc?.Nome ?? "Carregando...")</PageTitle>
+
+@if (carregando)
+{
+    <div class="page-empty"><p>Carregando...</p></div>
+}
+else if (disc == null)
+{
+    <div class="page-empty"><p>Disciplina não encontrada.</p><a href="">← Voltar</a></div>
+}
+else
+{
+    <div class="kanban-page">
+        <!-- Header da Disciplina -->
+        <div class="kanban-header">
+            <div class="kanban-header-left">
+                <div class="disc-badge-lg" style="background:@disc.Cor">@disc.Nome[0]</div>
+                <div>
+                    <h1 class="kanban-title">@disc.Nome</h1>
+                    <p class="kanban-sub">@disc.Professor</p>
+                </div>
+            </div>
+
+            <div class="kanban-header-right">
+                <div class="inline-stats">
+                    <div class="stat-chip @GetMediaClass()">
+                        📊 Média: @GetMediaLabel()
+                    </div>
+                    <div class="stat-chip @GetFaltaClass()">
+                        📅 Faltas: @disc.Faltas / @disc.LimiteDeFaltasEmAulas.ToString("0")
+                    </div>
+                    <button class="btn-sm btn-outline" @onclick="AbrirFaltas">+ Falta</button>
+                    <button class="btn-sm btn-outline" @onclick="AbrirNotas">📊 Notas</button>
+                    <button class="btn-sm btn-primary" @onclick="AbrirNovoCard">+ Tarefa</button>
+                </div>
+            </div>
+        </div>
+
+        <AvisoErro Mensagem="@erro" />
+
+        <!-- Alertas de faltas -->
+        @if (disc.ReprovadoPorFalta)
+        {
+            <div class="alert alert-danger">⛔ Atenção! Você ultrapassou o limite de faltas desta disciplina (@disc.PercentualFaltas.ToString("0")%). Risco de reprovação!</div>
+        }
+        else if (disc.EmRiscoDeFalta)
+        {
+            <div class="alert alert-warn">⚠️ Você está se aproximando do limite de faltas (@disc.PercentualFaltas.ToString("0")%). Cuidado!</div>
+        }
+
+        <!-- Board Kanban -->
+        <div class="kanban-board">
+            @foreach (var coluna in Enum.GetValues<KanbanColuna>())
+            {
+                var colunaLocal = coluna;
+                var cards = disc.Cards.Where(c => c.Coluna == colunaLocal).OrderBy(c => c.DataEntrega).ToList();
+                <div class="kanban-col">
+                    <div class="col-header">
+                        <span class="col-label">@colunaLocal.ToLabel()</span>
+                        <span class="col-count">@cards.Count</span>
+                    </div>
+
+                    <div class="col-cards"
+                         @ondragover:preventDefault="true"
+                         @ondrop="() => OnDrop(colunaLocal)">
+                        @foreach (var card in cards)
+                        {
+                            var cardLocal = card;
+                            <div class="kanban-card criticidade-@cardLocal.Criticidade.ToString().ToLower()"
+                                 draggable="true"
+                                 @ondragstart="() => OnDragStart(cardLocal)"
+                                 @onclick="() => AbrirCard(cardLocal)">
+
+                                @if (cardLocal.Tags.Any())
+                                {
+                                    <div class="card-tags">
+                                        @foreach (var tag in cardLocal.Tags)
+                                        {
+                                            <span class="tag">@tag</span>
+                                        }
+                                    </div>
+                                }
+
+                                <div class="card-titulo">@cardLocal.Titulo</div>
+
+                                @if (!string.IsNullOrEmpty(cardLocal.Descricao))
+                                {
+                                    <div class="card-desc">@cardLocal.Descricao</div>
+                                }
+
+                                @if (cardLocal.PesoNota > 0)
+                                {
+                                    <div class="card-peso">
+                                        <span class="peso-badge" style="background:@PesoColor(cardLocal.PesoNota)">
+                                            💯 Vale @cardLocal.PesoNota.ToString("0")%
+                                        </span>
+                                    </div>
+                                }
+
+                                @if (cardLocal.Subtarefas.Any())
+                                {
+                                    <div class="card-subtarefas">
+                                        <div class="subtarefa-bar">
+                                            <div class="subtarefa-fill" style="width:@Formato.Percentual(cardLocal.ProgressoSubtarefas)"></div>
+                                        </div>
+                                        <span class="subtarefa-label">@cardLocal.SubtarefasConcluidas/@cardLocal.Subtarefas.Count</span>
+                                    </div>
+                                }
+
+                                <div class="card-footer">
+                                    <div class="card-footer-left">
+                                        @if (cardLocal.Membros.Any())
+                                        {
+                                            <div class="card-avatars">
+                                                @foreach (var m in cardLocal.Membros.Take(3))
+                                                {
+                                                    <div class="mini-avatar" style="background:@m.AvatarCor" title="@m.Nome">@m.Nome[0]</div>
+                                                }
+                                            </div>
+                                        }
+                                        @if (cardLocal.PomodorosConcluidos > 0)
+                                        {
+                                            <span class="pomodoro-count">🍅 @cardLocal.PomodorosConcluidos</span>
+                                        }
+                                    </div>
+                                    @if (cardLocal.DataEntrega.HasValue)
+                                    {
+                                        <span class="card-data @cardLocal.Criticidade.ToString().ToLower()">
+                                            📅 @cardLocal.DataEntrega.Value.ToString("dd/MM")
+                                        </span>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        <button class="add-card-col-btn" @onclick="() => AbrirNovoCardColuna(colunaLocal)">
+                            + Adicionar tarefa
+                        </button>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+<!-- Modal de Falta -->
+@if (mostrarFaltas && disc != null)
+{
+    <div class="modal-overlay" @onclick="() => mostrarFaltas = false">
+        <div class="modal-box small" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>Registrar Falta</h3>
+                <button class="modal-close" @onclick="() => mostrarFaltas = false" aria-label="Fechar">✕</button>
+            </div>
+            <div class="modal-body">
+                <AvisoErro Mensagem="@erroModal" />
+                <p>Disciplina: <strong>@disc.Nome</strong></p>
+                <p>Faltas atuais: <strong>@disc.Faltas</strong></p>
+                <p>Limite (@disc.LimiteDeFaltasPercentual.ToString("0")%): <strong>@disc.LimiteDeFaltasEmAulas.ToString("0")</strong></p>
+                <div class="form-group" style="margin-top:12px">
+                    <label>Quantidade de faltas a registrar:</label>
+                    <input type="number" class="form-input" min="1" max="10" @bind="qtdFaltas" />
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-outline" @onclick="() => mostrarFaltas = false">Cancelar</button>
+                <button class="btn-primary" @onclick="RegistrarFalta">Confirmar</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Modal de Notas -->
+@if (mostrarNotas && disc != null)
+{
+    <div class="modal-overlay" @onclick="() => mostrarNotas = false">
+        <div class="modal-box medium" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>📊 Avaliações — @disc.Nome</h3>
+                <button class="modal-close" @onclick="() => mostrarNotas = false" aria-label="Fechar">✕</button>
+            </div>
+            <div class="modal-body">
+                <AvisoErro Mensagem="@erroModal" />
+                <div class="media-destaque">
+                    Média Atual: <strong style="color:@(MediaEdicao() >= 5 ? "#10b981" : "#ef4444")">@(MediaEdicao()?.ToString("0.00") ?? "–")</strong>
+                    <small style="margin-left:12px;color:var(--color-text-muted)">Soma dos pesos: @avaliacoesEdicao.Sum(a => a.Peso).ToString("0")% de 100%</small>
+                </div>
+                <div class="avaliacoes-table">
+                    @foreach (var av in avaliacoesEdicao)
+                    {
+                        var avLocal = av;
+                        <div class="av-row">
+                            <span class="av-nome">@avLocal.Nome</span>
+                            <span class="av-peso">Peso: @avLocal.Peso.ToString("0")%</span>
+                            <input type="number" class="form-input small" min="0" max="@avLocal.NotaMaxima" step="0.1"
+                                   placeholder="–"
+                                   value="@(avLocal.Nota.HasValue ? avLocal.Nota.Value.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) : "")"
+                                   @onchange="e => AtualizarNota(avLocal, e.Value?.ToString())" />
+                            <span class="av-max">/ @avLocal.NotaMaxima.ToString("0")</span>
+                        </div>
+                    }
+                </div>
+                <button class="btn-outline" @onclick="AdicionarAvaliacao">+ Adicionar Avaliação</button>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-outline" @onclick="() => mostrarNotas = false">Cancelar</button>
+                <button class="btn-primary" @onclick="SalvarNotas">Salvar</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Modal Card -->
+@if (mostrarCardModal && cardEmEdicao != null && disc != null)
+{
+    <ModalCard Card="@cardEmEdicao" Disciplina="@disc" IsNew="@cardIsNew"
+               OnClose="@FecharCard"
+               OnSaved="@FecharCard" />
+}
+
+@code {
+    [Parameter] public Guid DisciplinaId { get; set; }
+
+    DisciplinaDto? disc;
+    CardDto? cardArrastado;
+    CardDto? cardEmEdicao;
+    List<AvaliacaoDto> avaliacoesEdicao = new();
+    bool carregando = true;
+    bool cardIsNew = false;
+    bool mostrarCardModal = false;
+    bool mostrarFaltas = false;
+    bool mostrarNotas = false;
+    int qtdFaltas = 1;
+    string? erro;
+    string? erroModal;
+
+    protected override void OnInitialized() => Mudancas.Alterado += AoAlterar;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        carregando = true;
+        mostrarCardModal = mostrarFaltas = mostrarNotas = false;
+        erro = null;
+        await Carregar();
+        carregando = false;
+    }
+
+    async Task Carregar() => disc = await DisciplinaSvc.ObterAsync(DisciplinaId);
+
+    void AoAlterar() => _ = InvokeAsync(async () =>
+    {
+        await Carregar();
+        StateHasChanged();
+    });
+
+    string GetMediaClass() => disc?.Media is null ? "green" : disc.Media >= 7 ? "green" : disc.Media >= 5 ? "yellow" : "red";
+
+    string GetMediaLabel() => disc?.Media?.ToString("0.0") ?? "–";
+
+    string GetFaltaClass() => disc == null ? "green" : disc.ReprovadoPorFalta ? "red" : disc.EmRiscoDeFalta ? "yellow" : "green";
+
+    // ─── Arrastar e soltar ────────────────────────────────────────────
+    void OnDragStart(CardDto card) => cardArrastado = card;
+
+    async Task OnDrop(KanbanColuna novaColuna)
+    {
+        if (cardArrastado == null || disc == null) return;
+
+        var card = cardArrastado;
+        cardArrastado = null;
+        if (card.Coluna == novaColuna) return;
+
+        await Executar(() => CardSvc.MoverAsync(disc.Id, card.Id, novaColuna));
+    }
+
+    // ─── Cards ────────────────────────────────────────────────────────
+    void AbrirNovoCard() => AbrirNovo(KanbanColuna.AFazer);
+
+    void AbrirNovoCardColuna(KanbanColuna coluna) => AbrirNovo(coluna);
+
+    void AbrirNovo(KanbanColuna coluna)
+    {
+        cardEmEdicao = new CardDto { DisciplinaId = DisciplinaId, Coluna = coluna };
+        cardIsNew = true;
+        mostrarCardModal = true;
+    }
+
+    void AbrirCard(CardDto card)
+    {
+        cardEmEdicao = card;
+        cardIsNew = false;
+        mostrarCardModal = true;
+    }
+
+    void FecharCard()
+    {
+        mostrarCardModal = false;
+        cardEmEdicao = null;
+    }
+
+    // ─── Faltas ───────────────────────────────────────────────────────
+    void AbrirFaltas()
+    {
+        erroModal = null;
+        qtdFaltas = 1;
+        mostrarFaltas = true;
+    }
+
+    async Task RegistrarFalta()
+    {
+        if (disc == null) return;
+        erroModal = null;
+        try
+        {
+            await DisciplinaSvc.RegistrarFaltaAsync(disc.Id, qtdFaltas);
+            mostrarFaltas = false;
+        }
+        catch (DomainException ex)
+        {
+            erroModal = ex.Message;
+        }
+    }
+
+    // ─── Notas ────────────────────────────────────────────────────────
+    void AbrirNotas()
+    {
+        erroModal = null;
+        // O modal edita uma cópia: "Cancelar" descarta tudo.
+        avaliacoesEdicao = disc!.Avaliacoes.Select(a => new AvaliacaoDto
+        {
+            Id = a.Id, Nome = a.Nome, Peso = a.Peso, NotaMaxima = a.NotaMaxima, Nota = a.Nota, DataEntrega = a.DataEntrega
+        }).ToList();
+        mostrarNotas = true;
+    }
+
+    void AtualizarNota(AvaliacaoDto av, string? valor)
+    {
+        if (string.IsNullOrWhiteSpace(valor)) { av.Nota = null; return; }
+        if (double.TryParse(valor.Replace(',', '.'), System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out var nota))
+            av.Nota = Math.Clamp(nota, 0, av.NotaMaxima);
+    }
+
+    void AdicionarAvaliacao()
+    {
+        var restante = Math.Max(0, 100 - avaliacoesEdicao.Sum(a => a.Peso));
+        avaliacoesEdicao.Add(new AvaliacaoDto
+        {
+            Nome = "Avaliação " + (avaliacoesEdicao.Count + 1),
+            Peso = Math.Min(10, restante)
+        });
+    }
+
+    double? MediaEdicao()
+    {
+        var corrigidas = avaliacoesEdicao.Where(a => a.Nota.HasValue && a.Peso > 0).ToList();
+        var pesoTotal = corrigidas.Sum(a => a.Peso);
+        if (pesoTotal == 0) return null;
+        return corrigidas.Sum(a => a.Nota!.Value / a.NotaMaxima * 10 * a.Peso) / pesoTotal;
+    }
+
+    async Task SalvarNotas()
+    {
+        if (disc == null) return;
+        erroModal = null;
+        try
+        {
+            await DisciplinaSvc.SalvarAvaliacoesAsync(disc.Id, avaliacoesEdicao);
+            mostrarNotas = false;
+        }
+        catch (DomainException ex)
+        {
+            erroModal = ex.Message;
+        }
+    }
+
+    async Task Executar(Func<Task> acao)
+    {
+        erro = null;
+        try { await acao(); }
+        catch (DomainException ex) { erro = ex.Message; }
+    }
+
+    string PesoColor(double peso) => peso >= 40 ? "#ef4444" : peso >= 25 ? "#f59e0b" : "#6366f1";
+
+    public void Dispose() => Mudancas.Alterado -= AoAlterar;
+}
